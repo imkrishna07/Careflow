@@ -1,0 +1,7 @@
+node_modules/
+dist/
+backend/hospital-api
+backend/heap-tests
+backend/hospital.db
+backend/hospital.db-shm
+backend/hospital.db-wal

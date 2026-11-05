@@ -1,0 +1,21 @@
+#include "Database.h"
+#include <stdexcept>
+
+Database::Database(const std::string& path) {
+  if(sqlite3_open(path.c_str(),&handle)!=SQLITE_OK) throw std::runtime_error("Cannot open SQLite database");
+  execute("PRAGMA journal_mode=WAL");
+  execute("CREATE TABLE IF NOT EXISTS patients (patient_id TEXT PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL, gender TEXT NOT NULL, condition TEXT NOT NULL, severity INTEGER NOT NULL CHECK(severity BETWEEN 1 AND 5), original_severity INTEGER NOT NULL DEFAULT 0, arrival_time TEXT NOT NULL, emergency_category TEXT NOT NULL, arrival_epoch INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('waiting','treated')), treatment_time TEXT NOT NULL DEFAULT '', wait_seconds INTEGER NOT NULL DEFAULT 0)");
+  sqlite3_stmt* columns=nullptr;bool hasOriginal=false;if(sqlite3_prepare_v2(handle,"PRAGMA table_info(patients)",-1,&columns,nullptr)==SQLITE_OK){while(sqlite3_step(columns)==SQLITE_ROW){const auto* name=sqlite3_column_text(columns,1);if(name&&std::string(reinterpret_cast<const char*>(name))=="original_severity")hasOriginal=true;}sqlite3_finalize(columns);}if(!hasOriginal)execute("ALTER TABLE patients ADD COLUMN original_severity INTEGER NOT NULL DEFAULT 0");
+  execute("CREATE INDEX IF NOT EXISTS patients_status_priority ON patients(status, severity DESC, arrival_epoch ASC, patient_id ASC)");
+}
+Database::~Database(){if(handle)sqlite3_close(handle);}
+void Database::execute(const char* sql){char* error=nullptr;if(sqlite3_exec(handle,sql,nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"SQLite error";sqlite3_free(error);throw std::runtime_error(message);}}
+void Database::load(std::vector<Patient>& waiting,std::vector<Patient>& treated){
+  sqlite3_stmt* stmt=nullptr;const char* sql="SELECT patient_id,name,age,gender,condition,severity,original_severity,arrival_time,emergency_category,arrival_epoch,status,treatment_time,wait_seconds FROM patients ORDER BY arrival_epoch ASC, patient_id ASC";
+  if(sqlite3_prepare_v2(handle,sql,-1,&stmt,nullptr)!=SQLITE_OK)throw std::runtime_error(sqlite3_errmsg(handle));
+  while(sqlite3_step(stmt)==SQLITE_ROW){auto text=[&](int c){const auto* v=sqlite3_column_text(stmt,c);return v?std::string(reinterpret_cast<const char*>(v)):std::string();};Patient p;p.patientID=text(0);p.name=text(1);p.age=sqlite3_column_int(stmt,2);p.gender=text(3);p.condition=text(4);p.severity=sqlite3_column_int(stmt,5);p.originalSeverity=sqlite3_column_int(stmt,6);p.arrivalTime=text(7);p.emergencyCategory=text(8);p.arrivalEpoch=sqlite3_column_int64(stmt,9);p.treatmentTime=text(11);p.waitSeconds=sqlite3_column_int64(stmt,12);if(text(10)=="waiting")waiting.push_back(p);else treated.push_back(p);}
+  sqlite3_finalize(stmt);
+}
+void Database::save(const std::vector<Patient>& waiting,const std::vector<Patient>& treated){
+  execute("BEGIN IMMEDIATE");try{execute("DELETE FROM patients");sqlite3_stmt* stmt=nullptr;const char* sql="INSERT INTO patients(patient_id,name,age,gender,condition,severity,original_severity,arrival_time,emergency_category,arrival_epoch,status,treatment_time,wait_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";if(sqlite3_prepare_v2(handle,sql,-1,&stmt,nullptr)!=SQLITE_OK)throw std::runtime_error(sqlite3_errmsg(handle));auto put=[&](const Patient&p,const char* status){sqlite3_reset(stmt);sqlite3_clear_bindings(stmt);sqlite3_bind_text(stmt,1,p.patientID.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_text(stmt,2,p.name.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(stmt,3,p.age);sqlite3_bind_text(stmt,4,p.gender.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_text(stmt,5,p.condition.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int(stmt,6,p.severity);sqlite3_bind_int(stmt,7,p.originalSeverity?p.originalSeverity:p.severity);sqlite3_bind_text(stmt,8,p.arrivalTime.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_text(stmt,9,p.emergencyCategory.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(stmt,10,p.arrivalEpoch);sqlite3_bind_text(stmt,11,status,-1,SQLITE_STATIC);sqlite3_bind_text(stmt,12,p.treatmentTime.c_str(),-1,SQLITE_TRANSIENT);sqlite3_bind_int64(stmt,13,p.waitSeconds);if(sqlite3_step(stmt)!=SQLITE_DONE)throw std::runtime_error(sqlite3_errmsg(handle));};for(const auto&p:waiting)put(p,"waiting");for(const auto&p:treated)put(p,"treated");sqlite3_finalize(stmt);execute("COMMIT");}catch(...){execute("ROLLBACK");throw;}
+}

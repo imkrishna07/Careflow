@@ -1,0 +1,5 @@
+[
+  {"name":"Alex Morgan","age":34,"gender":"Female","condition":"Acute chest pain","severity":5,"emergencyCategory":"Cardiac"},
+  {"name":"Sam Rivera","age":51,"gender":"Male","condition":"Suspected wrist fracture","severity":3,"emergencyCategory":"Trauma"},
+  {"name":"Taylor Brooks","age":27,"gender":"Non-binary","condition":"Minor laceration","severity":2,"emergencyCategory":"General"}
+]
