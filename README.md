@@ -1,4 +1,4 @@
-# CareFlow — Hospital Emergency Patient Management System
+<h1 align="centre">CareFlow — Hospital Emergency Patient Management System </h1>
 
 A full-stack emergency queue mini-project demonstrating a custom C++17 Binary Max Heap with a responsive React dashboard.
 
